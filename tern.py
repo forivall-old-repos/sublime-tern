@@ -66,6 +66,9 @@ def init():
 
 	contrib = {
 		'sublimeReadFile': ternjs_file_reader,
+		'sublimeIsFile': os.path.isfile,
+		'sublimeIsDir': os.path.isdir,
+		'sublimePathResolve': os.path.join,
 		'sublimeGetFileNameFromView': file_name_from_view,
 		'sublimeViewContents': view_contents
 	}

@@ -3,7 +3,7 @@
     return mod(require("../lib/infer"), require("../lib/tern"), require);
   if (typeof define == "function" && define.amd) // AMD
     return define(["../lib/infer", "../lib/tern"], mod);
-  mod(tern, tern);
+  mod.call(this, tern, tern);
 })(function(infer, tern, require) {
   "use strict";
 
@@ -104,6 +104,67 @@
       return data.modules[file] = data.modules[name] = new infer.AVal;
     };
   })();
+
+  if (!!this && this.sublimeReadFile && this.sublimeIsFile &&
+      this.sublimeIsDir && this.sublimePathResolve) (function() {
+    var resolve = this.sublimePathResolve;
+    var isDir = this.sublimeIsDir;
+    var isFile = this.sublimeIsFile;
+    var readFileSync = this.sublimeReadFile;
+
+    function findModuleDir(server) {
+      if (server._node.moduleDir !== undefined) return server._node.moduleDir;
+      var dir = server.options.projectDir || "";
+
+      for (;;) {
+        var modDir = resolve(dir, "node_modules");
+
+        try {
+          if (isDir(modDir)) return (server._node.moduleDir = modDir);
+        } catch(e) {}
+        var end = dir.lastIndexOf("/");
+        if (end <= 0) return (server._node.moduleDir = null);
+        dir = dir.slice(0, end);
+      }
+    }
+
+    resolveModule = function(server, name, relative) {
+      var data = server._node, dir = server.options.projectDir || "";
+      if (!!data.options.dontLoad ||
+          data.options.dontLoad && new RegExp(data.options.dontLoad).test(name) ||
+          data.options.load && !new RegExp(data.options.load).test(name))
+        return infer.ANull;
+
+      var file = name;
+      var modDir;
+      if (!relative) {
+        modDir = findModuleDir(server);
+        if (!modDir) return infer.ANull;
+        file = resolve(modDir, file);
+      }
+
+      var pkg;
+      try {
+        pkg = JSON.parse(readFileSync(resolve(modDir, file + "/package.json")));
+      } catch(e) {}
+      if (pkg && pkg.main) {
+        file += "/" + pkg.main;
+      } else {
+        try {
+          if (isDir(resolve(dir, file)))
+            file += "/index.js";
+        } catch(e) {}
+      }
+      if (!/\.js$/.test(file)) file += ".js";
+
+      try {
+        if (!isFile(resolve(dir, file))) return infer.ANull;
+      } catch(e) { return infer.ANull; }
+
+      server.addFile(file);
+      return data.modules[file] = data.modules[name] = new infer.AVal();
+    };
+  }).call(this);
 
   infer.registerFunction("nodeRequire", function(_self, _args, argNodes) {
     if (!argNodes || !argNodes.length || argNodes[0].type != "Literal" || typeof argNodes[0].value != "string")
